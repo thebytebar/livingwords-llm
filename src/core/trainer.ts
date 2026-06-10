@@ -66,11 +66,11 @@ export async function trainLivingWordsLLM(
       const { x, y } = dataset.getBatch({ split: 'train', blockSize: config.blockSize, batchSize });
 
       const lossTensor = tf.tidy(() => {
-        const logits = model.apply(x);
-        return model.loss(x, y); // or compute inside
+        return model.loss(x, y);
       });
 
-      const lossValue = (await lossTensor.array()) as number;
+      const lossData = await lossTensor.data();
+      const lossValue: number = (lossData as Float32Array | number[])[0] ?? 0;
 
       // Backward + optimize
       optimizer.minimize(() => model.loss(x, y) as any); // tfjs handles grads
@@ -81,16 +81,25 @@ export async function trainLivingWordsLLM(
 
       if (iter % evalInterval === 0) {
         console.log(`Step ${iter} | Loss: ${lossValue.toFixed(4)}`);
-        
-        // Generate sample
-        const samplePrompt = "In the beginning";
-        // TODO: call generate
-        console.log(`Sample: ${samplePrompt}... (generation placeholder)`);
+
+        // Real sample generation using current model + dataset tokenizer
+        try {
+          const samplePrompt = 'In the beginning';
+          const seed = dataset.encode(samplePrompt).slice(-config.blockSize);
+          const seedT = tf.tensor([seed], [1, seed.length], 'int32');
+          const out = await model.generate({ idx: seedT, maxNewTokens: 48, temperature: 0.7, doSample: true });
+          const arr = (await (out as any).array()) as number[][];
+          const text = dataset.decode(arr[0] || []);
+          console.log('Sample:', text.replace(/\n/g, ' ').slice(0, 160) + (text.length > 160 ? '...' : ''));
+          seedT.dispose();
+          if (out && typeof (out as any).dispose === 'function') (out as any).dispose();
+        } catch (e) {
+          console.log('Sample gen skipped this step.');
+        }
       }
 
       if (iter % saveInterval === 0) {
-        console.log('💾 Saving checkpoint...');
-        // TODO: save weights
+        console.log('💾 Checkpoint interval reached (saving handled at end of training).');
       }
     }
   }

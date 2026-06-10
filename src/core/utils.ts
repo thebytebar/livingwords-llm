@@ -1,5 +1,5 @@
 import * as tf from '@tensorflow/tfjs-node'
-import { Layer, LayerLike, Model, NumericWeights, LayerChildren, Weights } from './types'
+import { Layer, LayerLike, Model, NumericWeights, LayerChildren, Weights } from './types.js'
 
 export function withModelHelpers(model: Model, children: LayerChildren): Model {
   return {
@@ -45,7 +45,7 @@ export function dispose(layers: (null | LayerLike)[]) {
 export function countParams(layers: LayerLike[]): number {
   return tf.tidy(() => {
     return layers.reduce((count, layer) => {
-      if (!('countParams' in layer)) return count
+      if (!layer || !('countParams' in layer)) return count
       return count + (layer?.countParams?.() || 0)
     }, 0)
   })
@@ -60,6 +60,7 @@ async function getWeights(layer: tf.layers.Layer): Promise<NumericWeights> {
 function flatChildren(children: LayerChildren): tf.layers.Layer[] {
   const layers: tf.layers.Layer[] = []
   for (const child of children) {
+    if (!child) continue
     if ('trainable' in child) {
       layers.push(child as tf.layers.Layer)
     } else if ('getChildren' in child) {

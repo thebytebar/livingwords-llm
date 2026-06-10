@@ -7,8 +7,8 @@
  */
 
 import * as tf from '@tensorflow/tfjs-node'
-import { Layer, Model, ModelParams } from './types'
-import { countParams, dispose, withLayerHelpers, withModelHelpers } from './utils'
+import { Layer, Model, ModelParams } from './types.js'
+import { countParams, dispose, withLayerHelpers, withModelHelpers } from './utils.js'
 
 // GPT Language Model
 export function GPT(params: ModelParams): Model {
@@ -48,7 +48,7 @@ export function GPT(params: ModelParams): Model {
       return logits as tf.Tensor
     }),
 
-    loss: (idx, targets) => tf.tidy(() => {
+    loss: (idx: any, targets: any) => tf.tidy(() => {
       const logits = model.apply(idx)
       const [B, T, C] = logits.shape
       const flattenLogits = logits.reshape([B * T, C])
@@ -58,7 +58,7 @@ export function GPT(params: ModelParams): Model {
       return loss
     }),
 
-    generate: async (params, onGenerateChar) => {
+    generate: async (params: any, onGenerateChar?: (token: number) => void) => {
       const { maxNewTokens, temperature = 1.0, doSample = false, topK } = params
       let { idx } = params
 
@@ -72,7 +72,8 @@ export function GPT(params: ModelParams): Model {
           ], 1)
 
           const logits = model.apply(idxShaped)
-          let lastCharLogits = logits.slice([0, i < blockSize ? i : blockSize - 1, 0], [-1, 1, -1]).squeeze([1])
+          const pos = Math.min(T, blockSize) - 1
+          let lastCharLogits = logits.slice([0, pos, 0], [-1, 1, -1]).squeeze([1])
 
           lastCharLogits = tf.div(lastCharLogits, tf.scalar(temperature))
 
@@ -182,7 +183,7 @@ function CausalSelfAttention(args: any): Layer {
     }),
   }
 
-  return withLayerHelpers(multiHeadAttention, [cAttn, cProj, attnDrop, residDrop, bias])
+  return withLayerHelpers(multiHeadAttention, [cAttn, cProj, attnDrop, residDrop])
 }
 
 function FeedForward(args: any): Layer {

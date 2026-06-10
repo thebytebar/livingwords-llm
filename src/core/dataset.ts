@@ -4,7 +4,7 @@
  */
 
 import * as tf from '@tensorflow/tfjs-node'
-import { Dataset, DatasetParams, DatasetGetBatchParams } from './types'
+import { Dataset, DatasetParams, DatasetGetBatchParams } from './types.js'
 
 export async function createDataset(args: DatasetParams): Promise<Dataset> {
   const { textSource = '', maskZero = true } = args

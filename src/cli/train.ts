@@ -5,7 +5,7 @@ import { LivingWordsLLM } from '../core/model.js';
 import { configs } from '../core/config.js';
 
 program
-  .name('livingwords-llm train')
+  .name('lw-llm train')
   .description('Train LivingWords LLM on dataset')
   .option('-d, --data <path>', 'Path to training data (.txt)', 'data/bible.txt')
   .option('-e, --epochs <number>', 'Number of epochs', '1')

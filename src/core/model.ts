@@ -1,54 +1,198 @@
 import * as tf from '@tensorflow/tfjs-node';
 import { ModelConfig } from './config.js';
-import { GPT } from './gpt-model.js'; // Will contain the full transformer
+import { GPT } from './gpt-model.js';
+import { createDataset } from './dataset.js';
+
+interface Tokenizer {
+  encode: (s: string) => number[];
+  decode: (a: number[]) => string;
+}
 
 export class LivingWordsLLM {
   private config: ModelConfig;
-  private model: any; // GPT model instance
+  private gpt: any = null; // GPT model instance from gpt-model
   private isBuilt: boolean = false;
+  private tokenizer: Tokenizer | null = null;
+  private vocabulary: string[] = [];
+  private effectiveVocabSize: number = 0;
 
   constructor(config: ModelConfig) {
-    this.config = config;
-    console.log('🌟 LivingWordsLLM initialized with God-centered config:', config);
+    this.config = { ...config };
+    console.log('🌟 LivingWordsLLM initialized with God-centered config:', this.config);
   }
 
-  private async build() {
-    if (this.isBuilt) return;
-    // Initialize the full GPT transformer
-    this.model = GPT({
+  private async fetchText(path: string): Promise<string> {
+    const fs = await import('fs/promises');
+    try {
+      return await fs.readFile(path, 'utf8');
+    } catch {
+      return 'In the beginning God created the heavens and the earth. ' +
+             'Trust in the Lord with all your heart.';
+    }
+  }
+
+  private async initTokenizer(dataPath: string = 'data/bible.txt'): Promise<void> {
+    const text = await this.fetchText(dataPath);
+    const ds = await createDataset({ textSource: text, maskZero: true });
+    this.vocabulary = [...ds.vocabulary];
+    this.tokenizer = {
+      encode: ds.encode.bind(ds),
+      decode: ds.decode.bind(ds),
+    };
+    this.effectiveVocabSize = ds.vocabSize;
+    // Align our config for builds
+    this.config = { ...this.config, vocabSize: ds.vocabSize };
+    // Dispose the dataset tensors (encode/decode close over maps we need)
+    ds.dispose();
+  }
+
+  private async build(force: boolean = false): Promise<void> {
+    if (this.isBuilt && !force) return;
+
+    if (!this.tokenizer) {
+      await this.initTokenizer();
+    }
+
+    const vs = this.effectiveVocabSize || this.config.vocabSize;
+    this.gpt = GPT({
       nLayer: this.config.nLayer,
       nHead: this.config.nHead,
       nEmbd: this.config.nEmbd,
-      vocabSize: this.config.vocabSize,
+      vocabSize: vs,
       blockSize: this.config.blockSize,
       embdDropout: this.config.dropout,
       residDropout: this.config.dropout,
       attnDropout: this.config.dropout,
     });
-    this.model.build();
+    this.gpt.build?.();
     this.isBuilt = true;
-    console.log('✅ Model built. Parameter count:', this.model.summary().params);
+    const pcount = this.gpt.summary ? this.gpt.summary().params : 'n/a';
+    console.log(`✅ Model built. Params: ${pcount}, vocabSize: ${vs}, blockSize: ${this.config.blockSize}`);
+  }
+
+  private async getFsExtra(): Promise<any> {
+    const mod = await import('fs-extra');
+    return (mod as any).default || mod;
+  }
+
+  async save(weightsDir: string = 'weights'): Promise<void> {
+    if (!this.gpt || typeof this.gpt.getWeights !== 'function') {
+      console.log('No model weights to save yet.');
+      return;
+    }
+    const fse = await this.getFsExtra();
+    await fse.ensureDir(weightsDir);
+    const weights = await this.gpt.getWeights();
+    await fse.writeJson(`${weightsDir}/weights.json`, weights, { spaces: 0 });
+    await fse.writeJson(`${weightsDir}/meta.json`, {
+      vocabulary: this.vocabulary,
+      vocabSize: this.effectiveVocabSize,
+      blockSize: this.config.blockSize,
+      nEmbd: this.config.nEmbd,
+      nHead: this.config.nHead,
+      nLayer: this.config.nLayer,
+      savedAt: new Date().toISOString(),
+    }, { spaces: 2 });
+    console.log(`💾 Saved weights + vocab to ${weightsDir}/`);
+  }
+
+  async load(weightsDir: string = 'weights', opts: { silent?: boolean } = {}): Promise<boolean> {
+    const fse = await this.getFsExtra();
+    const wFile = `${weightsDir}/weights.json`;
+    const mFile = `${weightsDir}/meta.json`;
+    if (!(await fse.pathExists(wFile)) || !(await fse.pathExists(mFile))) {
+      if (!opts.silent) {
+        console.log('ℹ️  No saved weights found at', weightsDir, '(will initialize from data on first use)');
+      }
+      return false;
+    }
+    const meta = await fse.readJson(mFile);
+    const weights = await fse.readJson(wFile);
+
+    // Rebuild tokenizer from saved vocabulary (assumes same maskZero=1 shift)
+    const vocab: string[] = meta.vocabulary || [];
+    const stoi: Record<string, number> = {};
+    const itos: Record<number, string> = {};
+    const indexShift = 1;
+    vocab.forEach((ch, i) => {
+      const id = i + indexShift;
+      stoi[ch] = id;
+      itos[id] = ch;
+    });
+    this.vocabulary = vocab;
+    this.tokenizer = {
+      encode: (s: string) => s.split('').map((c) => stoi[c] || 0),
+      decode: (a: number[]) => a.map((i) => itos[i] || '').join(''),
+    };
+    this.effectiveVocabSize = meta.vocabSize || vocab.length;
+
+    // Prepare config for this vocab/block
+    this.config = {
+      ...this.config,
+      vocabSize: this.effectiveVocabSize,
+      blockSize: meta.blockSize || this.config.blockSize,
+      nEmbd: meta.nEmbd || this.config.nEmbd,
+      nHead: meta.nHead || this.config.nHead,
+      nLayer: meta.nLayer || this.config.nLayer,
+    };
+
+    await this.build(true);
+    if (this.gpt && typeof this.gpt.setWeights === 'function') {
+      this.gpt.setWeights(weights);
+    }
+    console.log('✅ Loaded model weights and tokenizer from disk.');
+    return true;
   }
 
   async train(dataPath: string, epochs: number = 1): Promise<void> {
-    await this.build();
+    // Ensure we have tokenizer derived from the *training* data for consistency
+    const text = await this.fetchText(dataPath);
+    const ds = await createDataset({ textSource: text, maskZero: true });
+    this.vocabulary = [...ds.vocabulary];
+    this.tokenizer = { encode: ds.encode.bind(ds), decode: ds.decode.bind(ds) };
+    this.effectiveVocabSize = ds.vocabSize;
+    this.config = { ...this.config, vocabSize: ds.vocabSize };
+
     console.log(`🙏 Training LivingWordsLLM on ${dataPath} for ${epochs} epochs...`);
 
-    // Full training loop integration
     const { trainLivingWordsLLM } = await import('./trainer.js');
-    const trainedModel = await trainLivingWordsLLM(this.config, dataPath, { epochs, maxIter: 500 });
-    
-    // Update internal model reference
-    this.model = trainedModel;
+    const trainedModel = await trainLivingWordsLLM(this.config, dataPath, { epochs, maxIter: 800 });
+
+    this.gpt = trainedModel;
+    this.isBuilt = true;
+    ds.dispose();
+
     console.log('📖 Training aligned with biblical doctrine. Ready for faithful generation.');
+    await this.save();
   }
 
   async generate(prompt: string, maxTokens: number = 100): Promise<string> {
     await this.build();
-    console.log(`🤖 Generating God-centered response for: "${prompt}"`);
+    if (!this.gpt || !this.tokenizer) {
+      return prompt + '\n\n[Model not ready for generation]';
+    }
+    console.log(`🤖 Generating God-centered continuation for: "${prompt}"`);
 
-    // TODO: Full generation with tokenizer
-    // Placeholder for now
-    return prompt + "\n\n[LivingWords continuation: A faithful, scripture-aligned response will be generated here...]";
+    try {
+      const seedTokens = this.tokenizer.encode(prompt);
+      const bs = this.config.blockSize;
+      const ctx = seedTokens.slice(-bs);
+      const idx = tf.tensor([ctx], [1, ctx.length], 'int32');
+
+      const outIdx = await this.gpt.generate({
+        idx,
+        maxNewTokens: maxTokens,
+        temperature: 0.75,
+        doSample: true,
+      });
+
+      const arr = (await (outIdx as tf.Tensor).array()) as number[][];
+      const generated = this.tokenizer.decode(arr[0] || []);
+      tf.dispose([idx, outIdx]);
+      return generated;
+    } catch (err) {
+      console.error('Generation error:', err);
+      return prompt + ' [...]';
+    }
   }
 }

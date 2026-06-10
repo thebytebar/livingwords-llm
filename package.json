@@ -1,22 +1,33 @@
 {
   "name": "livingwords-llm",
   "version": "0.1.0",
-  "description": "Open-source God-centered LLM aligned with Christian theological doctrine. Train and run small transformer models locally in Node.js for Bible studies, sermons, and faith-based applications.",
+  "description": "Open-source God-centered LLM aligned with Christian theological doctrine. Lightweight transformer designed to run on low-power machines. Includes CLI chatbot, server/API, web chat interface, model, and training on new documents.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "livingwords-llm": "dist/cli/index.js"
+    "lw-llm": "dist/cli/index.js"
   },
   "scripts": {
     "build": "tsc",
     "start": "node dist/cli/index.js",
-    "train": "npx ts-node src/cli/train.ts",
-    "generate": "npx ts-node src/cli/generate.ts",
-    "dev": "ts-node src/index.ts",
+    "train": "node --loader ts-node/esm src/cli/train.ts",
+    "generate": "node --loader ts-node/esm src/cli/generate.ts",
+    "chat": "node --loader ts-node/esm src/cli/chat.ts",
+    "serve": "node --loader ts-node/esm src/cli/serve.ts",
+    "dev": "node --loader ts-node/esm src/index.ts",
     "test": "echo \"Error: no test specified\" && exit 1",
     "prepare": "npm run build"
   },
-  "keywords": ["llm", "transformer", "gpt", "tensorflowjs", "bible", "christian", "faith-tech", "theology"],
+  "keywords": [
+    "llm",
+    "transformer",
+    "gpt",
+    "tensorflowjs",
+    "bible",
+    "christian",
+    "faith-tech",
+    "theology"
+  ],
   "author": "The Byte Bar Co. <info@thebytebar.com>",
   "license": "MIT",
   "repository": {
@@ -26,9 +37,12 @@
   "dependencies": {
     "@tensorflow/tfjs-node": "^4.21.0",
     "commander": "^12.1.0",
+    "express": "^5.2.1",
     "fs-extra": "^11.2.0"
   },
   "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/fs-extra": "^11.0.4",
     "@types/node": "^22.0.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.5.4"
