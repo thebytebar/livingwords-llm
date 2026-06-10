@@ -23,13 +23,28 @@ program
 
 program
   .command('train')
-  .description('Train the model on a dataset')
-  .option('-d, --data <path>', 'Path to training data', 'data/bible.txt')
-  .option('-e, --epochs <number>', 'Number of epochs', '1')
+  .description('Train the model on a dataset (character-level transformer)')
+  .option('-d, --data <path>', 'Path to training data (.txt)', 'data/bible.txt')
+  .option('-e, --epochs <number>', 'Number of full passes over the data', '1')
+  .option('--max-iter <number>', 'Maximum training steps (highly recommended to increase)', '800')
+  .option('--batch-size <number>', 'Batch size', '16')
+  .option('--lr, --learning-rate <number>', 'Learning rate for Adam optimizer', '0.001')
+  .option('--eval-interval <number>', 'Steps between printing loss + samples', '100')
+  .option('--save-interval <number>', 'Save a checkpoint every N steps (for long runs)', '500')
   .action(async (options) => {
     const model = new LivingWordsLLM(configs.pico);
-    await model.train(options.data, parseInt(options.epochs));
-    console.log('Training complete!');
+
+    const trainOpts = {
+      epochs: parseInt(options.epochs, 10),
+      maxIter: parseInt(options.maxIter, 10),
+      batchSize: parseInt(options.batchSize, 10),
+      learningRate: parseFloat(options.learningRate),
+      evalInterval: parseInt(options.evalInterval, 10),
+      saveInterval: parseInt(options.saveInterval, 10),
+    };
+
+    await model.train(options.data, trainOpts);
+    console.log('✅ Training session complete. Model ready for generation.');
   });
 
 program

@@ -16,6 +16,8 @@ export interface TrainOptions {
   evalInterval?: number;
   saveInterval?: number;
   maxIter?: number;
+  /** Optional callback invoked when a checkpoint should be saved (e.g. every saveInterval steps) */
+  saveCheckpoint?: (model: any, step: number) => void | Promise<void>;
 }
 
 export async function trainLivingWordsLLM(
@@ -29,7 +31,8 @@ export async function trainLivingWordsLLM(
     learningRate = 1e-3,
     evalInterval = 100,
     saveInterval = 500,
-    maxIter = 1000
+    maxIter = 1000,
+    saveCheckpoint
   } = options;
 
   console.log(`🙏 Starting God-centered training for LivingWords LLM on ${dataPath}`);
@@ -99,7 +102,13 @@ export async function trainLivingWordsLLM(
       }
 
       if (iter % saveInterval === 0) {
-        console.log('💾 Checkpoint interval reached (saving handled at end of training).');
+        console.log(`💾 Saving checkpoint at step ${iter}...`);
+        if (saveCheckpoint) {
+          const maybePromise = saveCheckpoint(model, iter);
+          if (maybePromise && typeof (maybePromise as any).then === 'function') {
+            await maybePromise;
+          }
+        }
       }
     }
   }

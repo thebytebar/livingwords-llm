@@ -2,6 +2,7 @@ import * as tf from '@tensorflow/tfjs-node';
 import { ModelConfig } from './config.js';
 import { GPT } from './gpt-model.js';
 import { createDataset } from './dataset.js';
+import type { TrainOptions } from './trainer.js';
 
 interface Tokenizer {
   encode: (s: string) => number[];
@@ -144,7 +145,18 @@ export class LivingWordsLLM {
     return true;
   }
 
-  async train(dataPath: string, epochs: number = 1): Promise<void> {
+  /**
+   * Train the model.
+   * You can pass a number for epochs (backward compatible) or a full options object.
+   */
+  async train(dataPath: string, epochsOrOptions: number | TrainOptions = 1): Promise<void> {
+    // Normalize options
+    const options: TrainOptions = typeof epochsOrOptions === 'number'
+      ? { epochs: epochsOrOptions }
+      : { ...epochsOrOptions };
+
+    const epochs = options.epochs ?? 1;
+
     // Ensure we have tokenizer derived from the *training* data for consistency
     const text = await this.fetchText(dataPath);
     const ds = await createDataset({ textSource: text, maskZero: true });
@@ -156,14 +168,38 @@ export class LivingWordsLLM {
     console.log(`🙏 Training LivingWordsLLM on ${dataPath} for ${epochs} epochs...`);
 
     const { trainLivingWordsLLM } = await import('./trainer.js');
-    const trainedModel = await trainLivingWordsLLM(this.config, dataPath, { epochs, maxIter: 800 });
+
+    // Callback for periodic checkpoints during long runs.
+    // We capture the current tokenizer state (vocabulary) via `this`.
+    const saveCheckpoint = async (ckptModel: any, step: number) => {
+      this.gpt = ckptModel;
+      const padded = String(step).padStart(5, '0');
+      const ckptDir = `weights/checkpoint-${padded}`;
+      await this.save(ckptDir);
+      // Also keep an easy-to-find "latest" checkpoint for convenience
+      await this.save('weights/latest');
+    };
+
+    // Forward rich training options (maxIter, batchSize, learningRate, etc.)
+    const trainedModel = await trainLivingWordsLLM(this.config, dataPath, {
+      epochs,
+      maxIter: options.maxIter ?? 800,
+      batchSize: options.batchSize,
+      learningRate: options.learningRate,
+      evalInterval: options.evalInterval,
+      saveInterval: options.saveInterval ?? 500,
+      saveCheckpoint,
+    });
 
     this.gpt = trainedModel;
     this.isBuilt = true;
     ds.dispose();
 
     console.log('📖 Training aligned with biblical doctrine. Ready for faithful generation.');
+    // Final canonical save to weights/
     await this.save();
+    // Ensure "latest" always reflects the fully completed training run
+    await this.save('weights/latest');
   }
 
   async generate(prompt: string, maxTokens: number = 100): Promise<string> {
