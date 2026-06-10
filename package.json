@@ -1,0 +1,40 @@
+{
+  "name": "livingwords-llm",
+  "version": "0.1.0",
+  "description": "Open-source God-centered LLM aligned with Christian theological doctrine. Train and run small transformer models locally in Node.js for Bible studies, sermons, and faith-based applications.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "livingwords-llm": "dist/cli/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/cli/index.js",
+    "train": "npx ts-node src/cli/train.ts",
+    "generate": "npx ts-node src/cli/generate.ts",
+    "dev": "ts-node src/index.ts",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "prepare": "npm run build"
+  },
+  "keywords": ["llm", "transformer", "gpt", "tensorflowjs", "bible", "christian", "faith-tech", "theology"],
+  "author": "The Byte Bar Co. <info@thebytebar.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/thebytebar/livingwords-llm.git"
+  },
+  "dependencies": {
+    "@tensorflow/tfjs-node": "^4.21.0",
+    "commander": "^12.1.0",
+    "fs-extra": "^11.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.4"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module"
+}
